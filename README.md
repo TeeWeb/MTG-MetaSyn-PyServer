@@ -33,19 +33,22 @@ In the future, could add a Decklist Import feature to allow users to upload deck
 ## Development Setup
 
 _Note: This is only the server-side application. Full functionality of the MTG MetaSyn app requires the frontend [ReactJS App](https://github.com/TeeWeb/MTG-MetaSyn-ReactApp)_
+
 ### Server (Flask/Python)
 
 - Change directory to /server and setup Python virtual environment: `cd ./server`
   - On MacOS/Linux:
-    - `python3 -m venv venv`
+    - `python3 -m venv venv` or `virtualenv venv`
     - `source venv/bin/activate`
   - On Windows:
     - `python -m venv venv`
     - `.\venv\Scripts\activate`
 - Install dependencies: `pip install -r requirements.txt`
+- Add a `config.yaml` file to the root directory. This file should contain the connection credentials for connecting to the MongoDB Atlas cloud database, and requires specific permission from the project team. Do _NOT_ commit this file to the repo.
 - Start server: `flask run --host=localhost`
 
-## Running the app with Docker
+## Setting up local SSL cert for development environment
 
-From the project's root directory, run:
-- `docker-compose up --build`
+Follow the instructions in [this helpful article](https://www.freecodecamp.org/news/how-to-get-https-working-on-your-local-development-environment-in-5-minutes-7af615770eec/) to create an SSL cert for your local dev environment and enable use of https requests from frontend app. Once you've completed these steps, run the following command to start up the Flask server on `localhost` using your self-signed certificate: `flask run --host=localhost --cert=<filename>.crt --key=<filename>.key`. [See this article](https://blog.miguelgrinberg.com/post/running-your-flask-application-over-https) for more information on using self-signed SSL certs with Flask.
+
+_Note: The same self-signed cert and key used for this local instance of the server will also need to be provided to the frontend app to enable full functionality during development.

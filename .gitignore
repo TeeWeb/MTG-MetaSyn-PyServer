@@ -11,3 +11,6 @@ server/app/config.yaml
 config.yaml
 server/app/config.yaml
 app/data/*
+*.crt
+*.key
+*.pem
