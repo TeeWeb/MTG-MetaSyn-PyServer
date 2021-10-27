@@ -1,5 +1,4 @@
 # Tools for polling card data sources and updating the MongoDB as needed
-
 import requests
 import zipfile
 from yaml import load, Loader
@@ -31,12 +30,11 @@ def get_data(url, save_path, chunk_size=128):
 
 # db options include: "RawDataDB" and "MetaSynDB"
 
-
 def update_db(collection_name):
     switch = {
         "keywords": handle_keywords_update,
-        "types": handle_types_update
-    }
+        "types": handle_types_update,
+        "sets": handle_sets_update    }
     update = switch.get(
         collection_name, lambda: "Invalid collection specified")
     update()
@@ -46,6 +44,39 @@ def update_db(collection_name):
 #     # Get latest cards
 #     get_data("https://mtgjson.com/api/v5/AllPrintings.json.zip", "./server/flaskr/data/allPrintings.json.zip")
 
+def handle_sets_update():
+    # Get latest sets data
+    raw_data = requests.get('https://mtgjson.com/api/v5/SetList.json').json()
+    updated_sets = []
+    for card_set in raw_data['data']:
+        updated_sets.append(card_set)
+    with open('./data/sets.yaml', 'w') as f:
+        f.write(str(updated_sets))
+    # Poll MongoDB for current 'sets' collection
+    try:
+        client = MongoClient("mongodb+srv://%s:%s@%s?retryWrites=true&w=majority" %
+                             (config["username"], config["pw"], config["mongodb_uri"]))
+    except ConnectionError:
+        print("Unable to connect to DB")
+        return
+    db = client['MetaSynDB']
+    collection = db['sets']
+    # Compare most recent list of sets with DB Collection
+    # Insert any new sets that are not already in the DB Collection
+    # TODO: add function to run synergy calculator on new sets BEFORE they're inserted into database
+    update_count = 0
+    print("## Checking for new sets")
+    for card_set in updated_sets:
+        if collection.count_documents({"code": card_set['code']}) == 0:
+            new_id = collection.insert_one(card_set).inserted_id
+            update_count += 1
+            print("Added new set to DB (" + str(new_id) + "): " + card_set['code'])
+    if update_count == 0:
+        print("### No updates to sets DB Collection needed")
+        return
+    else:
+        print("### Number of new sets added to DB: " + str(update_count))
+        return
 
 def handle_types_update():
     # Get latest card types
@@ -73,16 +104,16 @@ def handle_types_update():
     update_count = 0
     print("## Checking for new Card Types and subtypes")
     for card_type in updated_types:
-        if collection.find({"type": card_type}).count() == 0:
+        if collection.count_documents({"type": card_type}) == 0:
             new_card_type = dict(
                 type=card_type, subtypes=updated_types[card_type])
             print(new_card_type)
             new_id = collection.insert_one(new_card_type).inserted_id
             update_count += 1
             print("Added new card_type to DB (" + str(new_id) + "): " + card_type)
-        elif collection.find({"type": card_type}).count() == 1:
+        elif collection.count_documents({"type": card_type}) == 1:
             for subtype in updated_types[card_type]:
-                if collection.find({"type": card_type, "subtypes": subtype}).count() == 0:
+                if collection.count_documents({"type": card_type, "subtypes": subtype}) == 0:
                     print("## FOUND NEW SUBTYPE: " + card_type + "-" + subtype)
                     current_subtypes = collection.find(
                         {"type": card_type}, {"_id": 0, "subtypes": 1}).next()['subtypes']
@@ -131,7 +162,7 @@ def handle_keywords_update():
     # TODO: add function to run synergy calculator on new keywords BEFORE they're inserted into database
     update_count = 0
     for keyword in updated_keywords:
-        if collection.find({"keyword": keyword}).count() == 0:
+        if collection.count_documents({"keyword": keyword}) == 0:
             new_keyword = dict(keyword=keyword)
             new_id = collection.insert_one(new_keyword).inserted_id
             update_count += 1
