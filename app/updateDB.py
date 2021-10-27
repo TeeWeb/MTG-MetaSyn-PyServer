@@ -26,7 +26,7 @@ def get_data(url, save_path, chunk_size=128):
         for chunk in r.iter_content(chunk_size=chunk_size):
             f.write(chunk)
     with zipfile.ZipFile(save_path, 'r') as unzipped:
-        unzipped.extractall('./server/metasyn_app/data/')
+        unzipped.extractall('./app/data/')
 
 # db options include: "RawDataDB" and "MetaSynDB"
 
@@ -34,7 +34,8 @@ def update_db(collection_name):
     switch = {
         "keywords": handle_keywords_update,
         "types": handle_types_update,
-        "sets": handle_sets_update    }
+        "sets": handle_sets_update    
+    }
     update = switch.get(
         collection_name, lambda: "Invalid collection specified")
     update()
@@ -42,7 +43,7 @@ def update_db(collection_name):
 # TODO: create function to retrieve and update AllCards collection in DB
 # def handle_cards_update():
 #     # Get latest cards
-#     get_data("https://mtgjson.com/api/v5/AllPrintings.json.zip", "./server/flaskr/data/allPrintings.json.zip")
+#     get_data("https://mtgjson.com/api/v5/AllPrintings.json.zip", "./data/allPrintings.json.zip")
 
 def handle_sets_update():
     # Get latest sets data
