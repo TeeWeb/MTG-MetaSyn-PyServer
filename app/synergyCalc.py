@@ -1,13 +1,6 @@
-from collections import namedtuple
+from collections import defaultdict
 from itertools import count
 from mtgsdk import Card
-
-synergy_report_template = {
-    "synergy_score": None,
-    "cards": None,
-    "colors": {},
-    "keyword_abilities": None
-}
 
 class CalculatedSynergy():
     def __init__(self, id_a, cards):
@@ -19,7 +12,6 @@ class CalculatedSynergy():
             "score": 0,
             "colors": (self.card_a.colors, b_clrs)
         }
-        print(self.card_a.colors, b_clrs)
         if len(self.card_a.colors) > 0 and len(b_clrs) > 0:
             for color in self.card_a.colors:
                 if color in b_clrs:
@@ -42,24 +34,23 @@ class CalculatedSynergy():
             return abil_synergy
 
     def create_synergy_report(self, b_card):
-        report = synergy_report_template
+        report = defaultdict()
         if self.card_a.name == b_card["name"]:
             return {
                 "synergy_score": 100,
                 "name": self.card_a.name
             }
         else:
-            report["cards"] = [self.card_a.name, b_card["name"]]
-            report["colors"] = dict(self._calc_colors(b_card["colors"]))
-            report["keyword_abilities"] = self._calc_keyword_abilities(b_card)
-            report["synergy_score"] = report["colors"]["score"] + report["keyword_abilities"]
+            report["evaluatedCards"] = {"selectedCard": self.card_a.name, "compCard": b_card["name"]}
+            report["colorSynergy"] = dict(self._calc_colors(b_card["colors"]))
+            report["keywordAbilities"] = self._calc_keyword_abilities(b_card)
+            report["synergyScore"] = report["colorSynergy"]["score"] + report["keywordAbilities"]
             return report
 
     def get_synergy_scores(self): 
-        SynergyScores = namedtuple('SynergyScores', 'cardId cardName relatedCards')
-        reports = []
+        scores = defaultdict()
         for card in self.otherCards:
             report = self.create_synergy_report(card)
-            reports.append(dict(report))
-        synergyScore = SynergyScores(self.card_a.multiverse_id, self.card_a.name, reports)
+            scores[card['name']] = report
+        synergyScore = {"cardID": self.card_a.multiverse_id, "cardName": self.card_a.name, "synergyScores": scores}
         return synergyScore

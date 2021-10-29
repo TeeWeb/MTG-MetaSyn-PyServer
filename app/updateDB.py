@@ -11,7 +11,7 @@ from pymongo import MongoClient
 parser = argparse.ArgumentParser(
     description="Update app's MetaSyn database with latest data from MTGJSON.com. Default collection to update is AllCards")
 parser.add_argument('-c', '--collection', type=str, choices=[
-                    'cards', 'types', 'keywords', 'sets', 'formats'], default="cards", help="collection to update")
+                    'cards', 'types', 'keywords', 'sets'], default="cards", help="collection to update")
 args = parser.parse_args()
 
 # MongoDB config access file
