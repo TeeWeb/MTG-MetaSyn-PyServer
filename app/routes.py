@@ -68,5 +68,5 @@ def synergize():
     synergy = CalculatedSynergy(selected_card, data['otherCards'])
 
     syn_calc = synergy.get_synergy_scores()
-
+    
     return jsonify(syn_calc)
