@@ -1,20 +1,23 @@
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from itertools import count
 from mtgsdk import Card
 
 class CalculatedSynergy():
-    def __init__(self, id_a, cards):
-        self.card_a = Card.find(id_a)
-        self.otherCards = cards
+    def __init__(self, id_a, card):
+        self.selected_card = Card.find(id_a)
+        self.comp_card = card
+        self.scores = {"synergy_score": None, "evaluated_cards": None, "color_synergy": {}, "keyword_abilities": None}
 
-    def _calc_colors(self, b_clrs):
+    def _calc_colors(self):
         clr_synergy = {
             "score": 0,
-            "colors": (self.card_a.colors, b_clrs)
+            "colors": (self.selected_card.colors, self.comp_card["colors"])
         }
-        if len(self.card_a.colors) > 0 and len(b_clrs) > 0:
-            for color in self.card_a.colors:
-                if color in b_clrs:
+        if self.selected_card.colors is None or self.comp_card["colors"] is None:
+            clr_synergy["score"] += 1
+        elif len(self.selected_card.colors) > 0 and len(self.comp_card["colors"]) > 0:
+            for color in self.selected_card.colors:
+                if color in self.comp_card["colors"]:
                     clr_synergy["score"] += 1
         else:
             clr_synergy["score"] = 1
@@ -23,7 +26,7 @@ class CalculatedSynergy():
     def _calc_keyword_abilities(self, b_card):
         abil_synergy = 0
         try:
-            print("$$$A ->", self.card_a.text)
+            print("$$$A ->", self.selected_card.text)
         except:
             print("--- A has NO TEXT ---")
         try:
@@ -33,24 +36,15 @@ class CalculatedSynergy():
         finally:
             return abil_synergy
 
-    def create_synergy_report(self, b_card):
-        report = defaultdict()
-        if self.card_a.name == b_card["name"]:
+    def get_synergy_scores(self):
+        if self.selected_card.name == self.comp_card["name"]:
             return {
                 "synergy_score": 100,
-                "name": self.card_a.name
+                "name": self.selected_card.name
             }
         else:
-            report["evaluatedCards"] = {"selectedCard": self.card_a.name, "compCard": b_card["name"]}
-            report["colorSynergy"] = dict(self._calc_colors(b_card["colors"]))
-            report["keywordAbilities"] = self._calc_keyword_abilities(b_card)
-            report["synergyScore"] = report["colorSynergy"]["score"] + report["keywordAbilities"]
-            return report
-
-    def get_synergy_scores(self): 
-        scores = defaultdict()
-        for card in self.otherCards:
-            report = self.create_synergy_report(card)
-            scores[card['name']] = report
-        synergyScore = {"cardID": self.card_a.multiverse_id, "cardName": self.card_a.name, "synergyScores": scores}
-        return synergyScore
+            self.scores["evaluated_cards"] = {"selectedCard": self.selected_card.name, "compCard": self.comp_card['name']}
+            self.scores["color_synergy"] = dict(self._calc_colors())
+            self.scores["keyword_abilities"] = self._calc_keyword_abilities(self.comp_card)
+            self.scores["synergy_score"] = self.scores["color_synergy"]["score"] + self.scores["keyword_abilities"]
+        return self.scores

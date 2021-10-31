@@ -1,7 +1,8 @@
 from flask import request, jsonify
+from itertools import starmap
+
 from app import app, db
 from app.synergyCalc import CalculatedSynergy
-
 
 @app.route('/api', methods=['GET'])
 def api():
@@ -39,7 +40,6 @@ def types():
 
 @app.route('/api/subtypes', methods=['GET'])
 def subtypes():
-    print(request.args.get('type'))
     if not request.args.get('type') or request.args.get('type') == "undefined":
         return jsonify(["Select a Type"])
     else:
@@ -63,10 +63,12 @@ def gatherCards():
 
 @app.route('/api/synergize', methods=['POST'])
 def synergize():
-    selected_card = request.args.get('card')
+    selected_card_id = request.args.get('card')
     data = request.get_json()
-    synergy = CalculatedSynergy(selected_card, data['otherCards'])
-
-    syn_calc = synergy.get_synergy_scores()
-    
-    return jsonify(syn_calc)
+    results = []
+    for card in data['otherCards']:
+        synergy_obj = CalculatedSynergy(selected_card_id, card)
+        scores = (synergy_obj.comp_card['name'], synergy_obj.get_synergy_scores())
+        results.append(scores)
+    results.sort(key=lambda card: card[1]['synergy_score'])
+    return jsonify(results)
