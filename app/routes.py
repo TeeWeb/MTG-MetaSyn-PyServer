@@ -2,7 +2,8 @@ from flask import request, jsonify
 from itertools import starmap
 
 from app import app, db
-from app.synergyCalc import CalculatedSynergy
+from app.synergy import CardSynergy
+
 
 @app.route('/api', methods=['GET'])
 def api():
@@ -20,8 +21,10 @@ def sets():
 
 @app.route('/api/keywords', methods=['GET'])
 def keywords():
-    keywords_cursor = db.keywords.find(
-        {}, {"_id": 0, "keyword": 1}).sort("keyword")
+    keywords_cursor = db.keywords.find({}, {
+        "_id": 0,
+        "keyword": 1
+    }).sort("keyword")
     keywords = []
     for keyword in list(keywords_cursor):
         keywords.append(keyword['keyword'])
@@ -30,8 +33,11 @@ def keywords():
 
 @app.route('/api/types', methods=['GET'])
 def types():
-    card_types_cursor = list(db.types.find(
-        {}, {"_id": 0, "type": 1}).sort("type"))
+    card_types_cursor = list(
+        db.types.find({}, {
+            "_id": 0,
+            "type": 1
+        }).sort("type"))
     card_types = []
     for card_type in card_types_cursor:
         card_types.append(card_type['type'])
@@ -44,8 +50,12 @@ def subtypes():
         return jsonify(["Select a Type"])
     else:
         selected_type = request.args.get('type')
-        subtypes_dict = db.types.find({"type": selected_type}, {
-            "_id": 0, "subtypes": 1}).sort("subtypes").next()
+        subtypes_dict = db.types.find({
+            "type": selected_type
+        }, {
+            "_id": 0,
+            "subtypes": 1
+        }).sort("subtypes").next()
         subtypes = subtypes_dict['subtypes']
         return jsonify(subtypes)
 
@@ -53,8 +63,22 @@ def subtypes():
 @app.route('/api/gatherCards', methods=['POST'])
 def gatherCards():
     data = request.get_json()
-    cardsCursor = db.AllCards.find({'setCode': data['setCode']}, {'_id': 0, 'name': 1, 'type': 1, 'types': 1, 'subtypes': 1, 'power': 1,
-                                   'toughness': 1, 'multiverseId': 1, 'colors': 1, 'colorIdentity': 1, 'cmc': 1, 'setCode': 1, 'keywords': 1, 'text': 1})
+    cardsCursor = db.AllCards.find({'setCode': data['setCode']}, {
+        '_id': 0,
+        'name': 1,
+        'type': 1,
+        'types': 1,
+        'subtypes': 1,
+        'power': 1,
+        'toughness': 1,
+        'multiverseId': 1,
+        'colors': 1,
+        'colorIdentity': 1,
+        'cmc': 1,
+        'setCode': 1,
+        'keywords': 1,
+        'text': 1
+    })
     cards = []
     for card in list(cardsCursor):
         cards.append(card)
@@ -67,8 +91,10 @@ def synergize():
     data = request.get_json()
     results = []
     for card in data['otherCards']:
-        synergy_obj = CalculatedSynergy(selected_card_id, card)
-        scores = (synergy_obj.comp_card['name'], synergy_obj.get_synergy_scores())
+        print("~~ Synergizing", card['name'], "~~")
+        synergy_obj = CardSynergy(selected_card_id)
+        scores = (card["name"], synergy_obj.get_relative_synergy_scores(card))
         results.append(scores)
-    results.sort(key=lambda card: card[1]['synergy_score'])
+    results.sort(key=lambda card: card[1].overall)
+
     return jsonify(results)

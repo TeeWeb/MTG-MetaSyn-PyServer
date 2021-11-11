@@ -4,6 +4,7 @@ server/venv/
 *.pyc
 instance/
 .pytest_cache/
+.idea/
 venv/
 __pycache__/
 server/config.yaml
