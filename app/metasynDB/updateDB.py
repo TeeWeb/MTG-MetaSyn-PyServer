@@ -1,5 +1,6 @@
 # Tools for polling card data sources and updating the MongoDB as needed
 import os
+from datetime import datetime
 from typing import Collection, Dict, List
 import requests
 import zipfile
@@ -21,6 +22,7 @@ class DBUpdater():
     data_dir_path = '../data/'
 
     def __init__(self):
+        self.update(self, 'cards')
         self.update(self, 'keywords')
         self.update(self, 'sets')
 
@@ -42,15 +44,9 @@ class DBUpdater():
         with open(save_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=chunk_size):
                 f.write(chunk)
-        if ".zip" in save_path:
-            with zipfile.ZipFile(save_path, 'r') as unzipped:
-                unzipped.extractall(self.data_dir_path)
-            with open(save_path.rstrip(".zip"), 'r') as data:
-                latest_data = json.loads(data.read())
-        else:
-            with open(save_path, 'r') as data:
-                latest_data = json.loads(data.read())
-        return latest_data['meta']['date']
+        with open(save_path, 'r') as data:
+            latest_data = json.loads(data.read())
+            return latest_data['meta']['date']
 
     @classmethod
     def get_db_user(cls):
@@ -88,7 +84,7 @@ class DBUpdater():
                 local_data_date = current_data['meta']['date']
         # Failed to find local data file or read the date. Creates an empty json file.
         except Exception as e:
-            print(e)
+            print("Exception - local_update_needed():", e)
             with open(path_to_curr_data, 'w') as f:
                 f.write("{}")
             local_data_date = ""
@@ -109,21 +105,21 @@ class DBUpdater():
                 % (save_dest, latest_data_date))
             return True
 
-    @staticmethod
-    def get_db_collection(user: str, pw: str, url: str, collection: str):
+    @classmethod
+    def get_db_collection(cls, collection: str):
         try:
             client = MongoClient(
                 "mongodb+srv://%s:%s@%s?retryWrites=true&w=majority" %
-                (user, pw, url))
-        except ConnectionError:
-            print("Unable to connect to DB")
+                (cls.get_db_user(), cls.config['pw'], cls.get_db_url()))
+        except ConnectionError as e:
+            print("Unable to connect to DB", e)
             return
         db = client['MetaSynDB']
         switch = {
             "keywords": db['keywords'],
             "types": db['types'],
             "sets": db['sets'],
-            "cards": db['AllCards']
+            "cards": db['cards']
         }
         db_collection = switch.get(collection,
                                    lambda: "Invalid collection specified")
@@ -134,51 +130,133 @@ class DBUpdater():
                       data_key: str):
         new_items = []
         # Specifies which key to use for item in MongoDB Collection
-        collection_key = {"keywords": "keyword", "sets": "code"}
+        collection_key = {
+            "keywords": "keyword",
+            "sets": "code",
+            "cards": "identifiers",
+            "identifiers": "scryfallOracleId"
+        }
 
         # Check each item from latest data pull against those in the DB Collection
         # Return list of new items that are not already in the DB Collection
-        for item in latest_data[data_key]:
-            print("Checking DB for", item)
-            if collection.count_documents({collection_key[data_key]:
-                                           item}) == 0:
-                new_item = {collection_key[data_key]: item}
-                new_items.append(new_item)
+        print("Checking DB for new %s..." % (data_key))
+        start = datetime.now()
+        # Check the cards collection requires an additional step, so check data_key first
+        if data_key == "cards":
+            for item in latest_data[data_key]:
+                if collection.count_documents(
+                    {collection_key[data_key]: {
+                         "scryfallOracleId": item
+                     }}) == 0:
+                    print(
+                        "%s is not currently in DB (looked for { %s: { %s }})"
+                        % (item, collection_key[data_key],
+                           collection_key[collection_key[data_key]]))
+                    new_item = {collection_key[collection_key[data_key]]: item}
+                    new_items.append(new_item)
+        else:
+            for item in latest_data[data_key]:
+                if collection.count_documents({collection_key[data_key]:
+                                               item}) == 0:
+                    print("%s is not currently in DB (looked for { %s })" %
+                          (item, collection_key[data_key]))
+                    new_item = {collection_key[data_key]: item}
+                    new_items.append(new_item)
+        end = datetime.now()
+        print("Total Time to check DB:", end - start)
         return new_items
 
     @staticmethod
     def insert_new_items(collection: Collection, new_items: List):
-        inserted_ids = []
-        for item in new_items:
-            ### Comment out the next 3 lines when testing to avoid writing to DB
-            new_id = collection.insert_one(item).inserted_id
-            inserted_ids.append(new_id)
-            print("Added new item to DB (%s): %s" % (str(new_id), str(item)))
+        print("Inserting %s new items into DB..." % (len(new_items)))
+        start = datetime.now()
+        ### Comment out the next 3 lines when testing to avoid writing to DB
+        try:
+            db_results = collection.insert_many(new_items)
+            print("Added new items to DB:", db_results)
+        except Exception as e:
+            db_results = e
+            print("Exception while inserting item to DB:", e)
 
-            ### Use below print() statement for testing to avoid writing to DB
-            # print("Added new item to DB: %s" % (str(item)))
-        return inserted_ids
+        ### Use below print() statement for testing to avoid writing to DB
+        # print("(TEST) Adding new items to DB: %s" % (str(new_items)))
+        end = datetime.now()
+        print("Total Time to insert items into DB:", end - start)
+        return db_results
 
     # TODO: create function to retrieve and update AllCards collection in DB
     @classmethod
     def handle_cards_update(cls):
         # Check release date of current card data
         if cls.local_update_needed(
-                './data/AtomicCards.json',
-                'https://mtgjson.com/api/v5/AtomicCards.json.zip'):
+                cls, cls.data_dir_path + 'AtomicCards.json',
+                'https://mtgjson.com/api/v5/AtomicCards.json'):
+            # Get latest sets from newAtomicCards.json
+            new_data = requests.get(
+                'https://mtgjson.com/api/v5/AtomicCards.json').json()
+            last_data_update = new_data['meta']['date']
+            cards = []
+            oracle_ids = {"cards": []}
+            # AtomicCards data contains objects where:
+            # KEY is a card name (key=<card_name>)
+            # VALUE is an array of objects representing versions of cards with that name
+            # Build a list of card versions and create AtomicCards.json file
+            for card_name in new_data['data']:
+                for card_version in new_data['data'][card_name]:
+                    # Create a hash of card's faceName + scryfallOracleId to create a unique "_id" value
+                    try:
+                        card_version['_id'] = hash(
+                            (card_version['identifiers']['scryfallOracleId'],
+                             card_version['faceName']))
+                    except:
+                        card_version['_id'] = hash(
+                            card_version['identifiers']['scryfallOracleId'])
+                    # Remove foreignData and printings from cardData to reduce size
+                    try:
+                        del card_version['foreignData']
+                    except Exception as e:
+                        print("Exception:", e)
+                    try:
+                        del card_version['printings']
+                    except Exception as e:
+                        print("Exception:", e)
+                    cards.append(card_version)
+                    oracle_ids['cards'].append(
+                        str(card_version['identifiers']['scryfallOracleId']))
+            cards_data = {"meta": {"date": last_data_update}, "cards": cards}
+            with open(cls.data_dir_path + 'AtomicCards.json', 'w') as f:
+                f.write(json.dumps(cards_data, indent=4))
+            # Compare most recent list of cards with DB Collection
             collection = cls.get_db_collection('cards')
-            update_count = 0
-            print("## Checking for new cards")
-            with open('./data/AtomicCards.json', 'r') as card_data:
-                current_data = json.loads(card_data.read())
-                for card in current_data['data']:
-                    if collection.count_documents(
-                        {"multiverseId": card['multiverseId']}) == 0:
-                        print("New Card Found ->", card['multiverseId'],
-                              card['name'])
-        else:
-            print("### No updates to 'AllCards' DB collection needed")
-            return
+            # TODO: add function to run synergy calculator on new cards BEFORE they're inserted into database
+            # Get a list of dicts{'scryfallOracleId': <id>} that are not already in the DB Collection
+            new_oracle_ids = cls.get_new_items(collection, oracle_ids, 'cards')
+            if len(new_oracle_ids) > 0:
+                # Find the corresponding card object for each scryfallOracleId in new_oracle_ids
+                new_items = []
+                print(new_oracle_ids)
+                new_ids = []
+                for oid in new_oracle_ids:
+                    new_ids.append(oid['scryfallOracleId'])
+                for card in cards_data['cards']:
+                    if card['identifiers']['scryfallOracleId'] in new_ids:
+                        # Once set object is found within cards_data, add it to the list of items to insert into DB
+                        new_items.append(card)
+                        print("Prepping %s to add to DB: %s" %
+                              (card['identifiers']['scryfallOracleId'],
+                               card['_id']))
+                # Insert all new set objects into the DB
+                cls.insert_new_items(collection, new_items)
+                print("\nNew items added to DB")
+            else:
+                print("No new cards")
+        # Remove temp newSets.json file now that sets.json file has been updated
+        try:
+            os.remove(cls.data_dir_path + 'newAtomicCards.json')
+        except Exception as e:
+            print("Exception - handle_cards_update():", e)
+
+        return
 
     @classmethod
     def handle_sets_update(cls):
@@ -196,12 +274,10 @@ class DBUpdater():
             sets.sort(key=lambda set: set['code'])
             last_data_update = raw_data['meta']['date']
             sets_data = {"meta": {"date": last_data_update}, "sets": sets}
-            with open(cls.data_dir_path + '/sets.json', 'w') as f:
+            with open(cls.data_dir_path + 'sets.json', 'w') as f:
                 f.write(json.dumps(sets_data, indent=4))
             # Compare most recent list of sets with DB Collection
-            collection = cls.get_db_collection(cls.get_db_user(),
-                                               cls.config['pw'],
-                                               cls.get_db_url(), 'sets')
+            collection = cls.get_db_collection('sets')
             # TODO: add function to run synergy calculator on new sets BEFORE they're inserted into database
             # Get a list of dicts{'code': <set_code>} that are not already in the DB Collection
             new_set_codes = cls.get_new_items(collection, set_codes, 'sets')
@@ -303,9 +379,7 @@ class DBUpdater():
             with open(cls.data_dir_path + 'Keywords.json', 'w') as f:
                 f.write(json.dumps(keyword_data, indent=4))
             # Compare most recent list of keywords with DB Collection
-            collection = cls.get_db_collection(cls.get_db_user(),
-                                               cls.config['pw'],
-                                               cls.get_db_url(), 'keywords')
+            collection = cls.get_db_collection('keywords')
             # Insert any new keywords that are not already in the DB Collection
             # TODO: add function to run synergy calculator on new keywords BEFORE they're inserted into database
             new_items = cls.get_new_items(collection, keyword_data, 'keywords')
