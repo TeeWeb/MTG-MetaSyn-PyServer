@@ -25,6 +25,7 @@ class DBUpdater():
         self.update(self, 'cards')
         self.update(self, 'keywords')
         self.update(self, 'sets')
+        self.update(self, 'types')
 
     @staticmethod
     def update(self, collection_name: str):
@@ -77,7 +78,7 @@ class DBUpdater():
         return date
 
     def local_update_needed(self, path_to_curr_data: str, data_endpoint: str):
-        # Check date of current Keywords.json data, if a local copy is available
+        # Check date of current json data, if a local copy is available
         try:
             with open(path_to_curr_data, "r") as card_data:
                 current_data = json.loads(card_data.read())
@@ -134,7 +135,8 @@ class DBUpdater():
             "keywords": "keyword",
             "sets": "code",
             "cards": "identifiers",
-            "identifiers": "scryfallOracleId"
+            "identifiers": "scryfallOracleId",
+            "types": "type"
         }
 
         # Check each item from latest data pull against those in the DB Collection
@@ -170,6 +172,7 @@ class DBUpdater():
     def insert_new_items(collection: Collection, new_items: List):
         print("Inserting %s new items into DB..." % (len(new_items)))
         start = datetime.now()
+        db_results = {}
         ### Comment out the next 3 lines when testing to avoid writing to DB
         try:
             db_results = collection.insert_many(new_items)
@@ -187,11 +190,13 @@ class DBUpdater():
     # TODO: create function to retrieve and update AllCards collection in DB
     @classmethod
     def handle_cards_update(cls):
+        print("--- Cards ---")
         # Check release date of current card data
         if cls.local_update_needed(
                 cls, cls.data_dir_path + 'AtomicCards.json',
                 'https://mtgjson.com/api/v5/AtomicCards.json'):
             # Get latest sets from newAtomicCards.json
+            # TODO: Use 'newAtomicCards.json' that has already been featched rather than requesting again
             new_data = requests.get(
                 'https://mtgjson.com/api/v5/AtomicCards.json').json()
             last_data_update = new_data['meta']['date']
@@ -260,10 +265,12 @@ class DBUpdater():
 
     @classmethod
     def handle_sets_update(cls):
+        print("--- Sets ---")
         # Check release date of latest data for any updates
-        if cls.local_update_needed(cls, cls.data_dir_path + 'sets.json',
+        if cls.local_update_needed(cls, cls.data_dir_path + 'SetsList.json',
                                    'https://mtgjson.com/api/v5/SetList.json'):
             # Get latest sets from newSets.json
+            # TODO: Use 'newSetList.json' that has already been featched rather than requesting again
             raw_data = requests.get(
                 'https://mtgjson.com/api/v5/SetList.json').json()
             sets = []
@@ -274,7 +281,7 @@ class DBUpdater():
             sets.sort(key=lambda set: set['code'])
             last_data_update = raw_data['meta']['date']
             sets_data = {"meta": {"date": last_data_update}, "sets": sets}
-            with open(cls.data_dir_path + 'sets.json', 'w') as f:
+            with open(cls.data_dir_path + 'SetsList.json', 'w') as f:
                 f.write(json.dumps(sets_data, indent=4))
             # Compare most recent list of sets with DB Collection
             collection = cls.get_db_collection('sets')
@@ -302,70 +309,53 @@ class DBUpdater():
 
     @classmethod
     def handle_types_update(cls):
-        # Get latest card types
-        raw_data = requests.get(
-            'https://mtgjson.com/api/v5/CardTypes.json').json()
-        updated_types = {}
-        for card_type in raw_data['data']:
-            subtypes = []
-            for subtype in raw_data['data'][card_type]['subTypes']:
-                subtypes.append(subtype)
-            updated_types[card_type] = subtypes
-        with open(cls.data_dir_path + '/types.yaml', 'w') as f:
-            f.write(str(updated_types))
-        collection = cls.get_db_collection('types')
-        # Compare most recent list of types with DB Collection
-        # Insert any new types that are not already in the DB Collection
-        # TODO: add function to run synergy calculator on new types BEFORE they're inserted into database
-        update_count = 0
-        print("## Checking for new Types and Subtypes")
-        for card_type in updated_types:
-            if collection.count_documents({"type": card_type}) == 0:
-                new_card_type = dict(type=card_type,
-                                     subtypes=updated_types[card_type])
-                print(new_card_type)
-                new_id = collection.insert_one(new_card_type).inserted_id
-                update_count += 1
-                print("Added new card_type to DB (" + str(new_id) + "): " +
-                      card_type)
-            elif collection.count_documents({"type": card_type}) == 1:
-                for subtype in updated_types[card_type]:
-                    if collection.count_documents({
-                            "type": card_type,
-                            "subtypes": subtype
-                    }) == 0:
-                        print("## FOUND NEW SUBTYPE: " + card_type + "-" +
-                              subtype)
-                        current_subtypes = collection.find({
-                            "type": card_type
-                        }, {
-                            "_id": 0,
-                            "subtypes": 1
-                        }).next()['subtypes']
-                        current_subtypes.append(subtype)
-                        current_subtypes.sort()
-                        print(current_subtypes)
-                        collection.update(
-                            {"type": card_type},
-                            {"$set": {
-                                "subtypes": current_subtypes
-                            }})
-                        print("Added new subtype to '" + card_type +
-                              "' type in DB: " + subtype)
-                        update_count += 1
-        if update_count == 0:
-            print("### No updates to 'types' DB collection needed")
-            return
-        else:
-            print("### Number of new types added to DB: " + str(update_count))
-            return
+        print("--- Types ---")
+        # Check release date of latest data for any updates
+        if cls.local_update_needed(
+                cls, cls.data_dir_path + 'CardTypes.json',
+                'https://mtgjson.com/api/v5/CardTypes.json'):
+            # Get latest card types
+            # TODO: Use 'newCardTypes.json' that has already been featched rather than requesting again
+            raw_data = requests.get(
+                'https://mtgjson.com/api/v5/CardTypes.json').json()
+            types_data = {
+                "meta": {
+                    "date": raw_data['meta']['date']
+                },
+                "types": {}
+            }
+            for card_type in raw_data['data']:
+                subtypes = []
+                for subtype in raw_data['data'][card_type]['subTypes']:
+                    subtypes.append(subtype)
+                types_data['types'][card_type] = subtypes
+            with open(cls.data_dir_path + '/CardTypes.json', 'w') as f:
+                f.write(json.dumps(types_data, indent=4))
+            collection = cls.get_db_collection('types')
+            # Compare most recent list of types with DB Collection
+            # Insert any new types that are not already in the DB Collection
+            # TODO: add function to run synergy calculator on new types BEFORE they're inserted into database
+            new_items = cls.get_new_items(collection, types_data, 'types')
+            for new_item in new_items:
+                new_item["subtypes"] = types_data['types'][new_item['type']]
+            cls.insert_new_items(collection, new_items)
+            print("\n%s new types added to DB: %s" %
+                  (len(new_items), new_items))
+        # Remove temp newCardTypes.json file now that CardTypes.json file has been updated
+        try:
+            os.remove(cls.data_dir_path + 'newCardTypes.json')
+        except Exception as e:
+            print(e)
+        return
 
     @classmethod
     def handle_keywords_update(cls):
         # Check release date of latest data for any updates
+        print("--- Keywords ---")
         if cls.local_update_needed(cls, cls.data_dir_path + 'Keywords.json',
                                    'https://mtgjson.com/api/v5/Keywords.json'):
             # Get latest keywords from newKeywords.json
+            # TODO: Use 'newKeywords.json' that has already been featched rather than requesting again
             new_data = requests.get(
                 'https://mtgjson.com/api/v5/Keywords.json').json()
             sorted_keywords = cls.flatten_keywords_lists(new_data['data'])
@@ -407,16 +397,4 @@ class DBUpdater():
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(
-    #     description=
-    #     "Update app's MetaSyn database with latest data from MTGJSON.com. "
-    #     "Default collection to update is AllCards")
-    # parser.add_argument('-c',
-    #                     '--collection',
-    #                     type=str,
-    #                     choices=['cards', 'types', 'keywords', 'sets'],
-    #                     default="cards",
-    #                     help="collection to update")
-
-    # args = parser.parse_args()
     updater = DBUpdater()
