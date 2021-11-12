@@ -3,11 +3,8 @@ import os
 from datetime import datetime
 from typing import Collection, Dict, List
 import requests
-import zipfile
 from yaml import load, Loader
-import argparse
 import json
-from mtgsdk import Card, Set, card
 from pymongo import MongoClient
 from itertools import chain
 
