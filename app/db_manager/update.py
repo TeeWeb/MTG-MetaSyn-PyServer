@@ -7,17 +7,14 @@ from yaml import load, Loader
 import json
 from pymongo import MongoClient
 from itertools import chain
+import logging.config
+
+# Logger setup
+logging.config.fileConfig('logging.conf')
+logger = logging.getLogger('db_updater')
 
 
 class DBUpdater():
-
-    # MongoDB config access file
-    config_path = '../../config.yaml'
-    config = None
-    with open(config_path, 'r') as f:
-        config = dict(load(f, Loader=Loader))
-    data_dir_path = '../data/'
-
     def __init__(self):
         self.update(self, 'cards')
         self.update(self, 'keywords')
