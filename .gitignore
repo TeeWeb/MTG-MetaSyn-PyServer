@@ -15,3 +15,4 @@ app/data/*
 *.crt
 *.key
 *.pem
+*.log
