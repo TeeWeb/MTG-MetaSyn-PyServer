@@ -10,13 +10,13 @@ from pymongo import MongoClient
 from itertools import chain
 
 
-class DBUpdater():
+class Update():
     # Logger setup
     logging.config.fileConfig('logging.conf')
     logger = logging.getLogger('db_updater')
 
     def __init__(self):
-        self.update(self, 'cards')
+        self.update_cards = (self, 'cards')
         self.update(self, 'keywords')
         self.update(self, 'sets')
         self.update(self, 'types')
