@@ -2,7 +2,7 @@ import requests
 from yaml import load, Loader
 from mtgsdk import Card
 
-from app.synergyCalc import CalculatedSynergy
+from synergy import CardSynergy
 
 
 def create_app(test_config=None):
