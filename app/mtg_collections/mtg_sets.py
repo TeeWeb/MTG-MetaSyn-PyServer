@@ -10,24 +10,36 @@ class SetsUpdater(IUpdater):
     _capitalized_name = "Sets"
     _collection_name = "sets"
     _data_endpoint = "https://mtgjson.com/api/v5/SetList.json"
+    _identifier = "code"        
+    new_items = []
+    new_attributes = []
 
-    ###
-    # Private Methods
-    ###
-    def __format_cached_sets_data(self, cached_data) -> dict:
-        sets = []
-        set_codes = {"sets": []}
-        for card_set in cached_data['data']:
-            sets.append(card_set)
-            set_codes['sets'].append(card_set['code'])
-        sets.sort(key=lambda set: set['code'])
-        last_data_update = cached_data['meta']['date']
-        return {"meta": {"date": last_data_update}, "sets": sets}
+    def __is_new_set(self, set) -> bool: 
+        if self.collection.find_one({ self._identifier: set[self._identifier] }):
+            return False
+        return True
 
     ###
     # Utility Methods
     ###
-    def handle_sets_update(self):
+    def get_items_to_add(self) -> list:
+        self.new_items = []
+        local_data = self.local.get_data()
+        for set in local_data:
+            if self.__is_new_set(set):
+                self.new_items.append({'code': set['code']})
+        return self.new_items
+
+    def get_items_to_update(self) -> list:
+        self.new_attributes = []
+        print("Only set codes are checked, so no additional data to update.")
+        return self.new_attributes
+
+    def update_local_data(self):
+        print("Updating Sets data...")
+        self.local.update()
+
+    def handle_sets_update(self) -> None:
         print("--- Sets ---")
         collection = self.get_collection()
         # Check release date of latest data for any updates
@@ -43,30 +55,4 @@ class SetsUpdater(IUpdater):
         try:
             os.remove(self.manager.data_dir_path + 'newSetList.json')
         except Exception as e:
-            print("Unable to remove temp data file",
-                              e,
-                              exc_info=True)
-        return
-
-    def cache_data_from_api(self) -> str:
-        raw_data = self.get_data_from_api().json()
-        formatted_data = self.__format_cached_sets_data(raw_data)
-        with open(self.local_data.get_temp_file_path(), 'w') as f:
-            f.write(json.dumps(formatted_data, indent=4))
-            f.close()
-        return formatted_data["meta"]["date"]
-
-    def update_local_data(self):
-        print("Updating Sets data...")
-        # self.cache_data_from_api()
-        # try:
-        #     with open(self.local_data.get_temp_file_path(), 'r') as e:
-        #         cached_data = json.loads(e.read())
-        # except Exception as err1:
-        #     raise Exception("Error while loading cached '" + self._collection_name + "' file at " + self.local_data.get_temp_file_path + ":", err1)
-        # try:
-        #     with open(self.local_data.get_file_path(), 'w') as f:
-        #         f.write(json.dumps(cached_data, indent=4))
-        #         f.close()
-        # except Exception as err2:
-        #     raise Exception("Error while writing cached '" + self._collection_name + "' sets data to local data file at " + self.local_data.get_file_path + ":", err2)
+            print("Unable to remove temp data file", e, exc_info=True)

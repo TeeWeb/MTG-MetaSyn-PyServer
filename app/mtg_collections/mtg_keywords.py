@@ -9,23 +9,31 @@ class KeywordsUpdater(IUpdater):
     _capitalized_name = "Keywords"
     _collection_name = "keywords"
     _data_endpoint = "https://mtgjson.com/api/v5/Keywords.json"
+    _identifier = "keyword"       
+    new_items = []
+    new_attributes = [] 
 
-    ###
-    # Private Methods
-    ###
-    def __flatten_keywords_lists(data: dict) -> dict:
-        flattened_iter = chain(data['abilityWords'], data['keywordAbilities'],
-                               data['keywordActions'])
-        keywords = []
-        for i in flattened_iter:
-            keywords.append(i)
-        keywords.sort()
-        sorted_keywords = dict.fromkeys(keywords)
-        return sorted_keywords
+    def _is_new_keyword(self, keyword) -> bool:
+        if self.collection.find_one({ self._identifier: keyword }):
+            return False
+        return True
     
     ###
     # Utility Methods
     ###
+    def get_items_to_add(self) -> list:
+        self.new_items = []
+        local_data = self.local.get_data()
+        for keyword in local_data:
+            if self._is_new_keyword(keyword):
+                self.new_items.append({ self._identifier: keyword })
+        return self.new_items
+
+    def get_items_to_update(self) -> list:
+        self.new_attributes = []
+        print("No additional keywords data to update")
+        return self.new_attributes
+
     def handle_keywords_update(self):    
         # Check release date of latest data for any updates
         print("--- Keywords ---")
@@ -43,34 +51,27 @@ class KeywordsUpdater(IUpdater):
                 },
                 "keywords": sorted_keywords
             }
-            with open(self.data_dir_path + 'Keywords.json', 'w') as f:
+            with open(self._data_dir_path + 'Keywords.json', 'w') as f:
                 f.write(json.dumps(keyword_data, indent=4))
             # Compare most recent list of keywords with DB Collection
             collection = self.get_db_collection('keywords')
             # Insert any new keywords that are not already in the DB Collection
             # TODO: add function to run synergy calculator on new keywords BEFORE they're inserted into database
-            new_items = self.get_new_items(self, collection, keyword_data,
+            new_items = self.get_items_to_add(self, collection, keyword_data,
                                           'keywords')
             self.insert_new_items(self, collection, new_items)
         # Remove temp newKeywords.json file now that Keywords.json file has been updated
         try:
-            os.remove(self.data_dir_path + 'newKeywords.json')
+            os.remove(self._data_dir_path + 'newKeywords.json')
         except Exception as e:
             print("Unable to remove temp data file",
                               e,
                               exc_info=True)
         return
 
-    def cache_data_from_api(self) -> str:
-        raw_data = self.get_data_from_api.json()
-        formatted_data = self.__flatten_keywords_lists(raw_data)
-        with open(self.local_data.get_temp_file_path(), 'w') as f:
-            f.write(json.dumps(formatted_data, indent=4))
-            f.close()
-        return formatted_data["meta"]["data"]
-
     def update_local_data(self):
         print("Updating local Keywords data...")
+        self.local.update()
         # new_data = self.__request_data()
         # print("Request:", new_data.status_code)
         # self.__flatten_keywords_lists(new_data)

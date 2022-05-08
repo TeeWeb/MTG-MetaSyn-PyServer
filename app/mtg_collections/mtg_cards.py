@@ -8,20 +8,33 @@ class CardsUpdater(IUpdater):
     _capitalized_name = "Cards"
     _collection_name = "cards"
     _data_endpoint = "https://mtgjson.com/api/v5/AtomicCards.json"
+    _identifier = "scryfallOracleId"
+    new_items = []
+    new_attributes = []
 
-    def __get_new_data_pulled_from_api(self) -> dict:
-        try:
-            with open(self.local_data.get_temp_file_path(), 'r') as f:
-                data_dict = json.loads(f.read())
-                return data_dict
-        except Exception as e:
-            Exception("Error attempting to open temporary data file:", e)
+    def _is_new_item(self, id) -> bool:
+        if self.collection.find_one({ "identifiers": { self._identifier: id }}):
+            return False
+        return True
 
     def print_date_last_updated(self) -> str:
         return self.print_date_from_local_data()
 
     def local_update_needed(self) -> bool:
         return self.__is_local_update_needed(self.last_updated())
+
+    def get_items_to_add(self) -> list:
+        self.new_items = []
+        local_data = self.local.get_data()
+        for card in local_data:
+            if self._is_new_item(card['identifiers'][self._identifier]):
+                self.new_items.append({ self._identifier: card })
+        return self.new_items
+
+    def get_items_to_update(self) -> list:
+        self.new_attributes = []
+        print("TODO: implement card attributes updater")
+        return self.new_attributes
 
     # TODO: create function to retrieve and update AllCards collection in DB
     def handle_cards_update(self):
@@ -64,13 +77,13 @@ class CardsUpdater(IUpdater):
                     oracle_ids['cards'].append(
                         str(card_version['identifiers']['scryfallOracleId']))
             cards_data = {"meta": {"date": last_data_update}, "cards": cards}
-            with open(self.data_dir_path + 'AtomicCards.json', 'w') as f:
+            with open(self._data_dir_path + 'AtomicCards.json', 'w') as f:
                 f.write(json.dumps(cards_data, indent=4))
             # Compare most recent list of cards with DB Collection
             collection = self.get_db_collection('cards')
             # TODO: add function to run synergy calculator on new cards BEFORE they're inserted into database
             # Get a list of dicts{'scryfallOracleId': <id>} that are not already in the DB Collection
-            new_oracle_ids = self.get_new_items(self, collection, oracle_ids,
+            new_oracle_ids = self.get_items_to_add(self, collection, oracle_ids,
                                                'cards')
             if len(new_oracle_ids) > 0:
                 # Find the corresponding card object for each scryfallOracleId in new_oracle_ids
@@ -92,20 +105,13 @@ class CardsUpdater(IUpdater):
                 print("No new cards")
         # Remove temp newSets.json file now that sets.json file has been updated
         try:
-            os.remove(self.data_dir_path + 'newAtomicCards.json')
+            os.remove(self._data_dir_path + 'newAtomicCards.json')
         except Exception as e:
             print("Unable to remove temp data file",
                               e,
                               exc_info=True)
         return
 
-    def cache_data_from_api(self) -> str:
-        raw_data = self.get_data_from_api.json()
-        with open(self.local_data.get_temp_file_path(), 'w') as f:
-            f.write(json.dumps(raw_data, indent=4))
-            f.close()
-        return raw_data["meta"]["data"]
-
     def update_local_data(self):
         print("Updating Cards data...")
-        pass
+        self.local.update()
