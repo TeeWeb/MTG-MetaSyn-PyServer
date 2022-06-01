@@ -1,33 +1,30 @@
 from curses import raw
 import json
 import os
-from typing import Collection, Dict
-from urllib.request import Request
 
 from app.mtg_collections.update import IUpdater
 
 class SetsUpdater(IUpdater):
     _capitalized_name = "Sets"
-    _collection_name = "sets"
     _data_endpoint = "https://mtgjson.com/api/v5/SetList.json"
     _identifier = "code"        
     new_items = []
     new_attributes = []
 
-    def __is_new_set(self, set) -> bool: 
-        if self.collection.find_one({ self._identifier: set[self._identifier] }):
-            return False
-        return True
-
     ###
     # Utility Methods
     ###
+    def get_distinct_coll_items(self) -> list:
+        return self.get_whole_collection().distinct(self._identifier)
+
     def get_items_to_add(self) -> list:
         self.new_items = []
         local_data = self.local.get_data()
+        coll_items = self.get_distinct_coll_items()
         for set in local_data:
-            if self.__is_new_set(set):
-                self.new_items.append({'code': set['code']})
+            print(set[self._identifier])
+            if set not in coll_items:
+                self.new_items.append({ "set": set })
         return self.new_items
 
     def get_items_to_update(self) -> list:

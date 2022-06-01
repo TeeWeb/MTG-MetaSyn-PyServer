@@ -1,4 +1,3 @@
-from itertools import chain
 import requests
 import json
 import os
@@ -7,25 +6,23 @@ from app.mtg_collections.update import IUpdater
 
 class KeywordsUpdater(IUpdater):
     _capitalized_name = "Keywords"
-    _collection_name = "keywords"
     _data_endpoint = "https://mtgjson.com/api/v5/Keywords.json"
     _identifier = "keyword"       
     new_items = []
     new_attributes = [] 
-
-    def _is_new_keyword(self, keyword) -> bool:
-        if self.collection.find_one({ self._identifier: keyword }):
-            return False
-        return True
     
     ###
     # Utility Methods
     ###
+    def get_distinct_coll_items(self) -> list:
+        return self.get_whole_collection().distinct(self._identifier)
+
     def get_items_to_add(self) -> list:
         self.new_items = []
         local_data = self.local.get_data()
+        coll_items = self.get_distinct_coll_items()
         for keyword in local_data:
-            if self._is_new_keyword(keyword):
+            if keyword not in coll_items:
                 self.new_items.append({ self._identifier: keyword })
         return self.new_items
 

@@ -1,5 +1,4 @@
 import json
-from threading import local
 import requests
 import os
 
@@ -13,16 +12,10 @@ def has_supertype(type_obj) -> bool:
 
 class TypesUpdater(IUpdater):
     _capitalized_name = "Types"
-    _collection_name = "types"
     _data_endpoint = "https://mtgjson.com/api/v5/CardTypes.json"
     _identifier = "type"
     new_items = []
     new_attributes = []
-
-    def __is_new_type(self, type_obj) -> bool:
-        if self.collection.find({ self._identifier: type_obj }):
-            return False
-        return True
 
     def __get_type_from_local_data(self, type) -> dict:
         local_data = self.local.get_data()
@@ -98,6 +91,19 @@ class TypesUpdater(IUpdater):
                 new_supertypes.append(s)
         return new_supertypes
 
+    def get_distinct_coll_items(self) -> list:
+        return self.get_whole_collection().distinct(self._identifier)
+
+    def get_items_to_add(self) -> list:
+        self.new_items = []
+        local_data = self.local.get_data()
+        coll_items = self.get_distinct_coll_items()
+        for cached_item in local_data:
+            print(cached_item)
+            if cached_item not in coll_items:
+                self.new_items.append({ self._identifier: cached_item })
+        return self.new_items
+
     ###
     # Utility Methods
     ###
@@ -106,14 +112,6 @@ class TypesUpdater(IUpdater):
 
     def local_update_needed(self) -> bool:
         return self.__is_local_update_needed(self.last_updated())
-
-    def get_items_to_add(self) -> list:
-        self.new_items = []
-        local_data = self.local.get_data()
-        for type in local_data:
-            if self.__is_new_type(type):
-                self.new_items.append({"type": type})
-        return self.new_items
 
     def get_items_to_update(self) -> list:
         self.new_attributes = []

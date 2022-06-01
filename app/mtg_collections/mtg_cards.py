@@ -6,29 +6,25 @@ from app.mtg_collections.update import IUpdater
 
 class CardsUpdater(IUpdater):
     _capitalized_name = "Cards"
-    _collection_name = "cards"
     _data_endpoint = "https://mtgjson.com/api/v5/AtomicCards.json"
     _identifier = "scryfallOracleId"
     new_items = []
     new_attributes = []
 
-    def _is_new_item(self, id) -> bool:
-        if self.collection.find_one({ "identifiers": { self._identifier: id }}):
-            return False
-        return True
-
-    def print_date_last_updated(self) -> str:
-        return self.print_date_from_local_data()
-
     def local_update_needed(self) -> bool:
         return self.__is_local_update_needed(self.last_updated())
+
+    def get_distinct_coll_items(self) -> list:
+        return self.get_whole_collection().distinct("identifiers")
 
     def get_items_to_add(self) -> list:
         self.new_items = []
         local_data = self.local.get_data()
-        for card in local_data:
-            if self._is_new_item(card['identifiers'][self._identifier]):
-                self.new_items.append({ self._identifier: card })
+        coll_items = self.get_distinct_coll_items()
+        for cached_item in local_data:
+            print(cached_item)
+            if cached_item not in coll_items:
+                self.new_items.append({ self._identifier: cached_item })
         return self.new_items
 
     def get_items_to_update(self) -> list:
@@ -40,16 +36,13 @@ class CardsUpdater(IUpdater):
     def handle_cards_update(self):
         print("--- Cards ---")
         # Check release date of current card data
-        if self.local_update_needed(
-                self, self.file_name,
-                self._data_endpoint):
+        if self.local.__is_outdated():
             # Get latest sets from newAtomicCards.json
             # TODO: Use 'newAtomicCards.json' that has already been featched rather than requesting again
             new_data = requests.get(
                 self._data_endpoint).json()
             last_data_update = new_data['meta']['date']
-            cards = []
-            oracle_ids = {"cards": []}
+            cards = {"cards": []}
             # AtomicCards data contains objects where:
             # KEY is a card name (key=<card_name>)
             # VALUE is an array of objects representing versions of cards with that name
@@ -73,9 +66,8 @@ class CardsUpdater(IUpdater):
                         del card_version['printings']
                     except Exception as e:
                         print("Exception:", e)
-                    cards.append(card_version)
-                    oracle_ids['cards'].append(
-                        str(card_version['identifiers']['scryfallOracleId']))
+                    card = {str(card_version['identifiers']['scryfallOracleId']): card_version }
+                    cards['cards'].append(card)
             cards_data = {"meta": {"date": last_data_update}, "cards": cards}
             with open(self._data_dir_path + 'AtomicCards.json', 'w') as f:
                 f.write(json.dumps(cards_data, indent=4))
@@ -83,7 +75,7 @@ class CardsUpdater(IUpdater):
             collection = self.get_db_collection('cards')
             # TODO: add function to run synergy calculator on new cards BEFORE they're inserted into database
             # Get a list of dicts{'scryfallOracleId': <id>} that are not already in the DB Collection
-            new_oracle_ids = self.get_items_to_add(self, collection, oracle_ids,
+            new_oracle_ids = self.get_items_to_add(self, collection, cards,
                                                'cards')
             if len(new_oracle_ids) > 0:
                 # Find the corresponding card object for each scryfallOracleId in new_oracle_ids

@@ -1,16 +1,9 @@
 import argparse
-import chunk
-from email.parser import Parser
-from http import client
 import json
 from multiprocessing import Manager
-from socket import SHUT_WR
 from types import NoneType
-from typing import Collection, Dict, Tuple
+from typing import Collection, Dict
 from warnings import WarningMessage
-from pip import List
-import requests
-from yaml import load, Loader
 
 # Updater Singletons
 from app.mtg_collections.mtg_keywords import KeywordsUpdater
@@ -35,10 +28,11 @@ class Manager():
 
     def __init__(self, config: dict=get_default_config()):
         self.config = config
-        self.keywords = KeywordsUpdater(self.get_mongodb_collection('keywords'))
-        self.types =  TypesUpdater(self.get_mongodb_collection('types'))
-        self.sets = SetsUpdater(self.get_mongodb_collection('sets'))
-        self.cards = CardsUpdater(self.get_mongodb_collection('cards'))
+        self.client = self.__get_mongodb_client()
+        self.keywords = self.__get_keywords_collection()
+        self.types = self.__get_types_collection()
+        self.sets = self.__get_sets_collection()
+        self.cards = self.__get_cards_collection()
         self.updaters = {
             "keywords": self.keywords,
             "types": self.types,
@@ -62,36 +56,65 @@ class Manager():
     def __get_user_pw(self) -> str:
         return self.config['pw']
 
-    def __get_all_dates(self) -> Dict:
-        dates = {}
-        for i in self.updaters.keys():
-            name = i
-            last_updated = self.updaters[i].local.get_date()
-            dates[name] = last_updated
-        return dates
-
-    ###
-    # Utility Methods
-    ###
     def __get_mongodb_client(self) -> MongoClient:
-        print("%s connecting to DB at %s" % (self.__get_username(), self.__get_db_uri()))
+        print(f"{self.__get_username()} connecting to DB at {self.__get_db_uri()}")
         try:
             client = MongoClient(
                 "mongodb+srv://%s:%s@%s?retryWrites=true&w=majority" %
                 (self.__get_username(), self.__get_user_pw(), self.__get_db_uri()))
         except ConnectionError as e:
-            print("Unable to connect to DB", e)
+            print(f"Unable to connect to DB: {e}\nPlease try again.")
             return
+        except Exception as f:
+            raise Exception(f)
+        print(f"{self.__get_username()} connected to {client}")
         db = client['MetaSynDB']
         return db
 
-    def get_mongodb_collection(self, collection_name: str) -> Collection:
-        try:
-            db_collection = self.__get_mongodb_client()
-            db_collection = db_collection[collection_name]
-        except Exception as e:
-            print("Unable to get %s Collection: " % (collection_name, e))
+    def __get_all_dates(self) -> Dict:
+        dates = {}
+        for i in self.updaters:
+            name = i
+            if self.updaters[i] is None:
+                raise Exception(f"{i} Updater() has not been initialized. Run connect() method and then try again.")
+            last_updated = self.updaters[i].local.get_date()
+            dates[name] = last_updated
+        return dates
+
+    def __get_mongodb_collection(self, collection_name: str) -> Collection:
+        print(f"Initializing {collection_name}...")
+        db_collection = self.client[collection_name]
         return db_collection
+
+    def __get_keywords_collection(self) -> IUpdater:
+        return KeywordsUpdater(self.__get_mongodb_collection('keywords'))
+
+    def __get_types_collection(self) -> IUpdater:
+        return TypesUpdater(self.__get_mongodb_collection('types'))
+
+    def __get_sets_collection(self) -> IUpdater:
+        return SetsUpdater(self.__get_mongodb_collection('sets'))
+
+    def __get_cards_collection(self) -> IUpdater:
+        return CardsUpdater(self.__get_mongodb_collection('cards'))
+
+    ###
+    # Utility Methods
+    ###
+    def switch_user(self, username, pw) -> None:
+        print(f"Switching user to {username}")
+        current_username = self.config['username']
+        current_pw = self.config['pw']
+        new_username = username
+        new_pw = pw
+        self.config['username'] = new_username
+        self.config['pw'] = new_pw
+        try:
+            self.connect()
+        except Exception as e:
+            Exception("Unable to switch to new user.", e)
+            self.config['username'] = current_username
+            self.config['pw'] = current_pw
 
     def print_all_dates(self) -> NoneType:
         dates = self.__get_all_dates()
@@ -134,7 +157,7 @@ class Manager():
         outdated_collections = self.__get_outdated_collections()
         if outdated_collections:
             for i in outdated_collections:
-                print("%s data is out of date. Updating %s Collection" % (i, i))
+                print("\n%s data is out of date. Updating %s Collection" % (i, i))
                 updater = self.updaters[i]
                 updater.update_local_data()
         else:
