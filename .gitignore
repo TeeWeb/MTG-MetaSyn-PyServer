@@ -16,3 +16,4 @@ app/data/*
 *.key
 *.pem
 *.log
+.DS_Store
